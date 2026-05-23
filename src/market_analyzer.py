@@ -128,12 +128,9 @@ class MarketAnalyzer:
         self.strategy = get_market_strategy_blueprint(self.region)
 
     def _get_review_language(self) -> str:
-        configured = normalize_report_language(
+        return normalize_report_language(
             getattr(getattr(self, "config", None), "report_language", "zh")
         )
-        if self.region == "us":
-            return "en"
-        return configured
 
     def _get_template_review_language(self) -> str:
         return normalize_report_language(
@@ -143,7 +140,7 @@ class MarketAnalyzer:
     def _get_market_scope_name(self, review_language: str | None = None) -> str:
         review_language = review_language or self._get_review_language()
         if self.region == "us":
-            return "US market"
+            return "US market" if review_language == "en" else "美股市场"
         if self.region == "hk":
             return "Hong Kong market" if review_language == "en" else "港股市场"
         if review_language == "en":
@@ -193,7 +190,8 @@ class MarketAnalyzer:
         return self.profile.prompt_index_hint
 
     def _get_strategy_prompt_block(self) -> str:
-        if self.region == "hk" and self._get_review_language() == "en":
+        review_language = self._get_review_language()
+        if self.region == "hk" and review_language == "en":
             return """## Strategy Blueprint: Hong Kong Market Regime Strategy
 Focus on HSI trend, southbound flow dynamics, and sector rotation to define next-session risk posture.
 
@@ -220,7 +218,34 @@ Focus on HSI trend, southbound flow dynamics, and sector rotation to define next
 - Risk-on: broad index breakout with expanding southbound participation.
 - Neutral: mixed index signals; focus on selective relative strength.
 - Risk-off: failed breakouts and rising volatility; prioritize capital preservation."""
-        if not (self.region == "cn" and self._get_review_language() == "en"):
+        if self.region == "us" and review_language != "en":
+            return """## 策略框架：美股市场趋势复盘策略
+聚焦标普500、纳斯达克、道指的趋势共振，结合宏观叙事、利率预期、波动率与行业轮动，形成下一交易日风险姿态。
+
+### 策略原则
+- 先判断标普500、纳斯达克、道指是否同向确认趋势。
+- 区分指数 beta 修复与 AI/半导体/软件等主题 alpha 轮动。
+- 所有结论必须落到风险偏好、仓位区间、关注方向和失效条件。
+
+### 分析维度
+- 趋势结构：判断市场处于动量延续、区间震荡还是风险回避。
+  - 三大指数是否同向
+  - VIX 是否配合风险偏好变化
+  - 关键支撑/压力是否被收复或跌破
+- 宏观与资金：把利率、美元、油价和政策预期映射到权益风险偏好。
+  - 美债收益率与美元方向
+  - 大盘广度和龙头集中度
+  - 防御板块与成长板块的相对强弱
+- 行业主线：识别可持续领涨方向和需要回避的弱势方向。
+  - AI/半导体/软件主线是否延续
+  - 能源/金融对宏观数据的敏感度
+  - 大型科技财报和 VIX 对市场的扰动
+
+### 行动框架
+- 进攻：指数共振突破且波动率下行。
+- 均衡：指数分化或主题轮动过快，优先相对强势方向。
+- 防守：突破失败或 VIX 快速上行，优先控制回撤。"""
+        if not (self.region == "cn" and review_language == "en"):
             return self.strategy.to_prompt_block()
         return """## Strategy Blueprint: A-share Three-Phase Recap Strategy
 Focus on index trend, liquidity, and sector rotation to shape the next-session trading plan.
@@ -256,6 +281,12 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 - **Trend Regime**: Classify the market as momentum, range, or risk-off based on HSI/HSTECH/HSCEI alignment.
 - **Capital Flows**: Track southbound flow direction and macro narrative for risk appetite signals.
 - **Sector Themes**: Focus on tech/internet platform persistence and financials/property policy sensitivity.
+"""
+        if self.region == "us" and review_language != "en":
+            return """### 六、策略框架
+- **趋势结构**：观察标普500、纳斯达克、道指是否同向确认，以及 VIX 是否配合。
+- **宏观与资金**：跟踪美债收益率、美元、油价和龙头股资金偏好对风险资产的影响。
+- **行业主线**：关注 AI、半导体、软件等成长主线是否延续，同时回避相对走弱的高估值方向。
 """
         if not (self.region == "cn" and review_language == "en"):
             return self.strategy.to_markdown_block()
