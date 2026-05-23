@@ -17,6 +17,48 @@ on:
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
+      stock_list:
+        description: '临时自选股列表，留空使用 Settings 里的 STOCK_LIST；例：ZLAB,HK06682,600152'
+        required: false
+        default: ''
+        type: string
+      model:
+        description: '临时主模型 LITELLM_MODEL，留空使用 Settings；例：openai/Doubao-Seed-2.0-lite'
+        required: false
+        default: ''
+        type: string
+      anspire_model:
+        description: '临时 Anspire 模型名，留空使用 Settings；若同时填写 model，model 优先'
+        required: false
+        default: ''
+        type: string
+      report_type:
+        description: '报告类型'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - simple
+          - full
+          - brief
+      market_region:
+        description: '大盘复盘市场范围'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - cn
+          - hk
+          - us
+          - both
+      trading_day_check_enabled:
+        description: '是否启用交易日检查；测试全量股票时可配合 force_run 使用'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
       force_run:
         description: '强制运行（跳过交易日检查）'
         required: false
@@ -65,7 +107,7 @@ jobs:
           LITELLM_CONFIG: ${{ vars.LITELLM_CONFIG || secrets.LITELLM_CONFIG }}
           LITELLM_CONFIG_YAML: ${{ vars.LITELLM_CONFIG_YAML || secrets.LITELLM_CONFIG_YAML }}
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL }}
+          LITELLM_MODEL: ${{ github.event.inputs.model || vars.LITELLM_MODEL || secrets.LITELLM_MODEL }}
           LITELLM_FALLBACK_MODELS: ${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS }}
           AGENT_LITELLM_MODEL: ${{ vars.AGENT_LITELLM_MODEL || secrets.AGENT_LITELLM_MODEL }}
           VISION_MODEL: ${{ vars.VISION_MODEL || secrets.VISION_MODEL }}
@@ -249,7 +291,7 @@ jobs:
           # 搜索服务
           # ==========================================
           ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }} 
-          ANSPIRE_LLM_MODEL: ${{ vars.ANSPIRE_LLM_MODEL || secrets.ANSPIRE_LLM_MODEL }}
+          ANSPIRE_LLM_MODEL: ${{ github.event.inputs.anspire_model || vars.ANSPIRE_LLM_MODEL || secrets.ANSPIRE_LLM_MODEL }}
           ANSPIRE_LLM_BASE_URL: ${{ vars.ANSPIRE_LLM_BASE_URL || secrets.ANSPIRE_LLM_BASE_URL }}
           ANSPIRE_LLM_ENABLED: ${{ vars.ANSPIRE_LLM_ENABLED || secrets.ANSPIRE_LLM_ENABLED }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
@@ -342,20 +384,20 @@ jobs:
           # ==========================================
           # 自选股配置
           # ==========================================
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
-          MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
+          STOCK_LIST: ${{ github.event.inputs.stock_list || vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
+          MARKET_REVIEW_REGION: ${{ github.event.inputs.market_region || vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
           MARKET_REVIEW_COLOR_SCHEME: ${{ vars.MARKET_REVIEW_COLOR_SCHEME || secrets.MARKET_REVIEW_COLOR_SCHEME || 'green_up' }}
           
           # ==========================================
           # 运行配置 ⬅️ 新增！
           # ==========================================
-          REPORT_TYPE: ${{ vars.REPORT_TYPE || secrets.REPORT_TYPE || 'simple' }}
+          REPORT_TYPE: ${{ github.event.inputs.report_type || vars.REPORT_TYPE || secrets.REPORT_TYPE || 'simple' }}
           REPORT_LANGUAGE: ${{ vars.REPORT_LANGUAGE || secrets.REPORT_LANGUAGE || '' }}
           REPORT_SHOW_LLM_MODEL: ${{ vars.REPORT_SHOW_LLM_MODEL || secrets.REPORT_SHOW_LLM_MODEL || 'true' }}
           SINGLE_STOCK_NOTIFY: ${{ vars.SINGLE_STOCK_NOTIFY || secrets.SINGLE_STOCK_NOTIFY || 'false' }}
           MARKET_REVIEW_ENABLED: ${{ vars.MARKET_REVIEW_ENABLED || secrets.MARKET_REVIEW_ENABLED || 'true' }}
           ANALYSIS_DELAY: ${{ vars.ANALYSIS_DELAY || secrets.ANALYSIS_DELAY || '0' }}
-          TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
+          TRADING_DAY_CHECK_ENABLED: ${{ github.event.inputs.trading_day_check_enabled || vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
           
           # ==========================================
           # 系统配置
@@ -390,6 +432,10 @@ jobs:
           echo "🎯 运行模式: $MODE"
           echo "📊 自选股: $STOCK_LIST"
           echo "📝 报告类型: $REPORT_TYPE"
+          echo "🌐 大盘复盘: $MARKET_REVIEW_ENABLED / 区域: $MARKET_REVIEW_REGION"
+          echo "🧪 交易日检查: $TRADING_DAY_CHECK_ENABLED"
+          echo "🤖 主模型: ${LITELLM_MODEL:-自动选择}"
+          echo "🤖 Anspire 模型: ${ANSPIRE_LLM_MODEL:-默认}"
           echo ""
           echo "=========================================="
           echo "📋 配置检查"
@@ -439,7 +485,11 @@ jobs:
           echo "  Telegram: $([ -n "$TELEGRAM_BOT_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  Discord: $([ -n "$DISCORD_WEBHOOK_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  AstrBot: $([ -n "$ASTRBOT_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Slack: $(([ -n "$SLACK_WEBHOOK_URL" ] || ([ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ])) && echo '✅ 已配置' || echo '⚪ 未配置')"
+          if [ -n "$SLACK_WEBHOOK_URL" ] || { [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ]; }; then
+            echo "  Slack: ✅ 已配置"
+          else
+            echo "  Slack: ⚪ 未配置"
+          fi
           echo "=========================================="
           echo ""
           
