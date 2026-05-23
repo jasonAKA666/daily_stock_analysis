@@ -60,9 +60,9 @@ on:
           - 'true'
           - 'false'
       force_run:
-        description: '强制运行（跳过交易日检查）'
+        description: '强制运行（跳过交易日检查；手动测试默认开启）'
         required: false
-        default: false
+        default: true
         type: boolean
 
 # 并发控制：同一时间只运行一个分析任务
