@@ -75,30 +75,76 @@ jobs:
     runs-on: ubuntu-latest
     # 添加超时限制，防止任务卡死
     timeout-minutes: ${{ fromJSON(vars.ANALYSIS_TIMEOUT_MINUTES || '30') }}
+    permissions:
+      contents: read
+      actions: read
     
     steps:
+      - name: 当天重复运行保护
+        id: duplicate_guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "should_skip=false" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT_NAME" != "schedule" ]; then
+            echo "非 schedule 触发，跳过去重检查。"
+            exit 0
+          fi
+
+          BJT_DATE="$(TZ=Asia/Shanghai date '+%Y-%m-%d')"
+          CUTOFF_UTC="$(TZ=Asia/Shanghai date -d "$BJT_DATE 19:10:00" -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "检查北京时间 $BJT_DATE 19:10 之后是否已有成功或运行中的日报任务..."
+
+          runs_json="$(gh api --method GET "repos/${REPO}/actions/workflows/00-daily-analysis.yml/runs" -f branch="$REF_NAME" -f per_page=30 -f created=">=${CUTOFF_UTC}")"
+          duplicate="$(echo "$runs_json" | jq -r --arg current "$CURRENT_RUN_ID" '[.workflow_runs[] | select((.id|tostring) != $current) | select(.event == "schedule" or .event == "workflow_dispatch") | select(.status == "queued" or .status == "in_progress" or (.status == "completed" and .conclusion == "success"))] | sort_by(.created_at) | last | if . == null then "" else "id=\(.id), event=\(.event), status=\(.status), conclusion=\(.conclusion), created_at=\(.created_at), url=\(.html_url)" end')"
+
+          if [ -n "$duplicate" ]; then
+            echo "should_skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::检测到当天已有运行，跳过本次延迟 schedule，避免重复推送：$duplicate"
+          else
+            echo "未检测到当天重复运行，继续执行。"
+          fi
+
+      - name: 显示跳过信息
+        if: steps.duplicate_guard.outputs.should_skip == 'true'
+        run: |
+          echo "检测到今天北京时间 19:10 之后已成功/正在运行过一次日报任务。"
+          echo "本次 schedule 可能是 GitHub 延迟触发，为避免重复推送，已跳过分析。"
+      
       - name: 随机延迟（避免固定时间访问）
+        if: steps.duplicate_guard.outputs.should_skip != 'true'
         run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
       
       - name: 检出代码
+        if: steps.duplicate_guard.outputs.should_skip != 'true'
         uses: actions/checkout@v5
       
       - name: 设置 Python 环境
+        if: steps.duplicate_guard.outputs.should_skip != 'true'
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
       
       - name: 安装依赖
+        if: steps.duplicate_guard.outputs.should_skip != 'true'
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
       
       - name: 创建必要目录
+        if: steps.duplicate_guard.outputs.should_skip != 'true'
         run: |
           mkdir -p data logs reports
       
       - name: 执行股票分析
+        if: steps.duplicate_guard.outputs.should_skip != 'true'
         env:
           # ==========================================
           # AI 配置
@@ -511,7 +557,7 @@ jobs:
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
-        if: always()
+        if: always() && steps.duplicate_guard.outputs.should_skip != 'true'
         with:
           name: analysis-reports-${{ github.run_number }}
           path: |
@@ -520,7 +566,7 @@ jobs:
           retention-days: 30
       
       - name: 显示运行结果
-        if: always()
+        if: always() && steps.duplicate_guard.outputs.should_skip != 'true'
         run: |
           echo ""
           echo "=========================================="
