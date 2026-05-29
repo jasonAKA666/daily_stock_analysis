@@ -98,7 +98,9 @@ jobs:
           fi
 
           BJT_DATE="$(TZ=Asia/Shanghai date '+%Y-%m-%d')"
-          CUTOFF_UTC="$(TZ=Asia/Shanghai date -d "$BJT_DATE 19:10:00" -u '+%Y-%m-%dT%H:%M:%SZ')"
+          # 用 Python 做时区换算，避免 GNU date 在 `-u` 下把输入时间按 UTC 解析。
+          CUTOFF_UTC="$(python3 -c 'from datetime import datetime, timezone; from zoneinfo import ZoneInfo; bjt=ZoneInfo("Asia/Shanghai"); d=datetime.now(bjt).date(); cutoff=datetime(d.year, d.month, d.day, 19, 10, tzinfo=bjt); print(cutoff.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+          echo "去重查询 UTC cutoff: $CUTOFF_UTC"
           echo "检查北京时间 $BJT_DATE 19:10 之后是否已有成功或运行中的日报任务..."
 
           runs_json="$(gh api --method GET "repos/${REPO}/actions/workflows/00-daily-analysis.yml/runs" -f branch="$REF_NAME" -f per_page=30 -f created=">=${CUTOFF_UTC}")"
